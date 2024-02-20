@@ -1,4 +1,12 @@
-node_modules
-dist
-docs
-.npmrc
+# Dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# Yarn files
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions

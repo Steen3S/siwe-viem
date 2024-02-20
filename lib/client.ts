@@ -1,13 +1,6 @@
-// TODO: Figure out how to get types from this lib:
-import {
-  isEIP55Address,
-  ParsedMessage,
-  parseIntegerNumber,
-} from '@spruceid/siwe-parser';
-import { providers } from 'ethers';
+import { isEIP55Address, ParsedMessage, parseIntegerNumber } from './parser';
 import * as uri from 'valid-url';
 
-import { getAddress, verifyMessage } from './ethersCompat';
 import {
   SiweError,
   SiweErrorType,
@@ -17,12 +10,8 @@ import {
   VerifyParams,
   VerifyParamsKeys,
 } from './types';
-import {
-  checkContractWalletSignature,
-  generateNonce,
-  checkInvalidKeys,
-  isValidISO8601Date,
-} from './utils';
+import { generateNonce, checkInvalidKeys, isValidISO8601Date } from './utils';
+import { getAddress, isHex, PublicClient, recoverMessageAddress } from 'viem';
 
 export class SiweMessage {
   /**RFC 4501 dns authority that is requesting the signing. */
@@ -149,7 +138,7 @@ export class SiweMessage {
 
     if (this.resources) {
       suffixArray.push(
-        [`Resources:`, ...this.resources.map(x => `- ${x}`)].join('\n')
+        [`Resources:`, ...this.resources.map((x) => `- ${x}`)].join('\n'),
       );
     }
 
@@ -189,9 +178,9 @@ export class SiweMessage {
    * @param signature Signature to match the address in the message.
    * @param provider Ethers provider to be used for EIP-1271 validation
    */
-  async validate(signature: string, provider?: providers.Provider) {
+  async validate(signature: string, provider?: PublicClient) {
     console.warn(
-      'validate() has been deprecated, please update your code to use verify(). validate() may be removed in future versions.'
+      'validate() has been deprecated, please update your code to use verify(). validate() may be removed in future versions.',
     );
     return this.verify({ signature }, { provider, suppressExceptions: false })
       .then(({ data }) => data)
@@ -207,10 +196,10 @@ export class SiweMessage {
    */
   async verify(
     params: VerifyParams,
-    opts: VerifyOpts = { suppressExceptions: false }
+    opts: VerifyOpts = { suppressExceptions: false },
   ): Promise<SiweResponse> {
-    return new Promise<SiweResponse>((resolve, reject) => {
-      const fail = result => {
+    return new Promise<SiweResponse>(async (resolve, reject) => {
+      const fail = (result) => {
         if (opts.suppressExceptions) {
           return resolve(result);
         } else {
@@ -226,22 +215,22 @@ export class SiweMessage {
           data: this,
           error: new Error(
             `${invalidParams.join(
-              ', '
-            )} is/are not valid key(s) for VerifyParams.`
+              ', ',
+            )} is/are not valid key(s) for VerifyParams.`,
           ),
         });
       }
 
       const invalidOpts: Array<keyof VerifyOpts> = checkInvalidKeys<VerifyOpts>(
         opts,
-        VerifyOptsKeys
+        VerifyOptsKeys,
       );
       if (invalidParams.length > 0) {
         fail({
           success: false,
           data: this,
           error: new Error(
-            `${invalidOpts.join(', ')} is/are not valid key(s) for VerifyOpts.`
+            `${invalidOpts.join(', ')} is/are not valid key(s) for VerifyOpts.`,
           ),
         });
       }
@@ -256,7 +245,7 @@ export class SiweMessage {
           error: new SiweError(
             SiweErrorType.DOMAIN_MISMATCH,
             domain,
-            this.domain
+            this.domain,
           ),
         });
       }
@@ -283,7 +272,7 @@ export class SiweMessage {
             error: new SiweError(
               SiweErrorType.EXPIRED_MESSAGE,
               `${checkTime.toISOString()} < ${expirationDate.toISOString()}`,
-              `${checkTime.toISOString()} >= ${expirationDate.toISOString()}`
+              `${checkTime.toISOString()} >= ${expirationDate.toISOString()}`,
             ),
           });
         }
@@ -299,7 +288,7 @@ export class SiweMessage {
             error: new SiweError(
               SiweErrorType.NOT_YET_VALID_MESSAGE,
               `${checkTime.toISOString()} >= ${notBefore.toISOString()}`,
-              `${checkTime.toISOString()} < ${notBefore.toISOString()}`
+              `${checkTime.toISOString()} < ${notBefore.toISOString()}`,
             ),
           });
         }
@@ -315,10 +304,26 @@ export class SiweMessage {
         });
       }
 
+      // if (isHex(signature) === false) {
+      //   return fail({
+      //     success: false,
+      //     data: this,
+      //     error: new SiweError(
+      //       SiweErrorType.INVALID_SIGNATURE,
+      //       'Hexadecimal',
+      //       signature,
+      //     ),
+      //   });
+      // }
+
       /** Recover address from signature */
       let addr;
       try {
-        addr = verifyMessage(EIP4361Message, signature);
+        addr = await recoverMessageAddress({
+          message: EIP4361Message,
+          // @ts-ignore
+          signature,
+        });
       } catch (e) {
         console.error(e);
       }
@@ -329,56 +334,14 @@ export class SiweMessage {
           data: this,
         });
       } else {
-        const EIP1271Promise = checkContractWalletSignature(
-          this,
-          signature,
-          opts.provider
-        )
-          .then(isValid => {
-            if (!isValid) {
-              return {
-                success: false,
-                data: this,
-                error: new SiweError(
-                  SiweErrorType.INVALID_SIGNATURE,
-                  addr,
-                  `Resolved address to be ${this.address}`
-                ),
-              };
-            }
-            return {
-              success: true,
-              data: this,
-            };
-          })
-          .catch(error => {
-            return {
-              success: false,
-              data: this,
-              error,
-            };
-          });
-
-        Promise.all([
-          EIP1271Promise,
-          opts
-            ?.verificationFallback?.(params, opts, this, EIP1271Promise)
-            ?.then(res => res)
-            ?.catch((res: SiweResponse) => res),
-        ]).then(([EIP1271Response, fallbackResponse]) => {
-          if (fallbackResponse) {
-            if (fallbackResponse.success) {
-              return resolve(fallbackResponse);
-            } else {
-              fail(fallbackResponse);
-            }
-          } else {
-            if (EIP1271Response.success) {
-              return resolve(EIP1271Response);
-            } else {
-              fail(EIP1271Response);
-            }
-          }
+        fail({
+          success: false,
+          data: this,
+          error: new SiweError(
+            SiweErrorType.INVALID_ADDRESS,
+            addr,
+            this.address,
+          ),
         });
       }
     });
@@ -393,7 +356,7 @@ export class SiweMessage {
     if (args.length > 0) {
       throw new SiweError(
         SiweErrorType.UNABLE_TO_PARSE,
-        `Unexpected argument in the validateMessage function.`
+        `Unexpected argument in the validateMessage function.`,
       );
     }
 
@@ -405,7 +368,7 @@ export class SiweMessage {
     ) {
       throw new SiweError(
         SiweErrorType.INVALID_DOMAIN,
-        `${this.domain} to be a valid domain.`
+        `${this.domain} to be a valid domain.`,
       );
     }
 
@@ -414,7 +377,7 @@ export class SiweMessage {
       throw new SiweError(
         SiweErrorType.INVALID_ADDRESS,
         getAddress(this.address),
-        this.address
+        this.address,
       );
     }
 
@@ -422,7 +385,7 @@ export class SiweMessage {
     if (!uri.isUri(this.uri)) {
       throw new SiweError(
         SiweErrorType.INVALID_URI,
-        `${this.uri} to be a valid uri.`
+        `${this.uri} to be a valid uri.`,
       );
     }
 
@@ -431,7 +394,7 @@ export class SiweMessage {
       throw new SiweError(
         SiweErrorType.INVALID_MESSAGE_VERSION,
         '1',
-        this.version
+        this.version,
       );
     }
 
@@ -441,7 +404,7 @@ export class SiweMessage {
       throw new SiweError(
         SiweErrorType.INVALID_NONCE,
         `Length > 8 (${nonce.length}). Alphanumeric.`,
-        this.nonce
+        this.nonce,
       );
     }
 

@@ -1,4 +1,4 @@
-import { providers } from 'ethers';
+import { type PublicClient } from 'viem';
 import { SiweMessage } from './client';
 
 export interface VerifyParams {
@@ -24,13 +24,18 @@ export const VerifyParamsKeys: Array<keyof VerifyParams> = [
 
 export interface VerifyOpts {
   /** ethers provider to be used for EIP-1271 validation */
-  provider?: providers.Provider;
+  provider?: PublicClient;
 
   /** If the library should reject promises on errors, defaults to false */
   suppressExceptions?: boolean;
 
   /** Enables a custom verification function that will be ran alongside EIP-1271 check. */
-  verificationFallback?: (params: VerifyParams, opts: VerifyOpts, message: SiweMessage, EIP1271Promise: Promise<SiweResponse>) => Promise<SiweResponse>;
+  verificationFallback?: (
+    params: VerifyParams,
+    opts: VerifyOpts,
+    message: SiweMessage,
+    EIP1271Promise: Promise<SiweResponse>,
+  ) => Promise<SiweResponse>;
 }
 
 export const VerifyOptsKeys: Array<keyof VerifyOpts> = [
@@ -57,14 +62,18 @@ export interface SiweResponse {
  * Interface used to return errors in SiweResponses.
  */
 export class SiweError {
-  constructor(type: SiweErrorType | string, expected?: string, received?: string) {
+  constructor(
+    type: SiweErrorType | string,
+    expected?: string,
+    received?: string,
+  ) {
     this.type = type;
     this.expected = expected;
     this.received = received;
   }
 
-    /** Type of the error. */
-    type: SiweErrorType | string;
+  /** Type of the error. */
+  type: SiweErrorType | string;
 
   /** Expected value or condition to pass. */
   expected?: string;

@@ -1,37 +1,10 @@
 import { randomStringForEntropy } from '@stablelib/random';
-import { Contract, providers, Signer } from 'ethers';
 
-import type { SiweMessage } from './client';
-import { hashMessage } from './ethersCompat';
+import { keccak_256 } from '@noble/hashes/sha3';
+import { bytesToHex } from '@noble/hashes/utils';
 
-const EIP1271_ABI = [
-  'function isValidSignature(bytes32 _message, bytes _signature) public view returns (bytes4)',
-];
-const EIP1271_MAGICVALUE = '0x1626ba7e';
 const ISO8601 =
   /^(?<date>[0-9]{4}-(0[1-9]|1[012])-(0[1-9]|[12][0-9]|3[01]))[Tt]([01][0-9]|2[0-3]):([0-5][0-9]):([0-5][0-9]|60)(.[0-9]+)?(([Zz])|([+|-]([01][0-9]|2[0-3]):[0-5][0-9]))$/;
-
-/**
- * This method calls the EIP-1271 method for Smart Contract wallets
- * @param message The EIP-4361 parsed message
- * @param provider Web3 provider able to perform a contract check (Web3/EthersJS).
- * @returns {Promise<boolean>} Checks for the smart contract (if it exists) if
- * the signature is valid for given address.
- */
-export const checkContractWalletSignature = async (
-  message: SiweMessage,
-  signature: string,
-  provider?: providers.Provider | Signer
-): Promise<boolean> => {
-  if (!provider) {
-    return false;
-  }
-
-  const walletContract = new Contract(message.address, EIP1271_ABI, provider);
-  const hashedMessage = hashMessage(message.prepareMessage());
-  const res = await walletContract.isValidSignature(hashedMessage, signature);
-  return res === EIP1271_MAGICVALUE;
-};
 
 /**
  * This method leverages a native CSPRNG with support for both browser and Node.js
@@ -79,13 +52,47 @@ export const isValidISO8601Date = (inputDate: string): boolean => {
 
 export const checkInvalidKeys = <T>(
   obj: T,
-  keys: Array<keyof T>
+  keys: Array<keyof T>,
 ): Array<keyof T> => {
   const invalidKeys: Array<keyof T> = [];
-  Object.keys(obj).forEach(key => {
+  Object.keys(obj).forEach((key) => {
     if (!keys.includes(key as keyof T)) {
       invalidKeys.push(key as keyof T);
     }
   });
   return invalidKeys;
+};
+
+/**
+ * This method is supposed to check if an address is conforming to EIP-55.
+ * @param address Address to be checked if conforms with EIP-55.
+ * @returns Either the return is or not in the EIP-55 format.
+ */
+export const isEIP55Address = (address: string) => {
+  if (address.length != 42) {
+    return false;
+  }
+
+  const lowerAddress = `${address}`.toLowerCase().replace('0x', '');
+  var hash = bytesToHex(keccak_256(lowerAddress));
+  var ret = '0x';
+
+  for (var i = 0; i < lowerAddress.length; i++) {
+    if (parseInt(hash[i], 16) >= 8) {
+      ret += lowerAddress[i].toUpperCase();
+    } else {
+      ret += lowerAddress[i];
+    }
+  }
+  return address === ret;
+};
+
+export const parseIntegerNumber = (number: string): number => {
+  const parsed = parseInt(number);
+
+  // TODO: Fix this
+  // if (parsed === NaN) throw new Error('Invalid number.');
+
+  if (parsed === Infinity) throw new Error('Invalid number.');
+  return parsed;
 };
