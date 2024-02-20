@@ -1,8 +1,13 @@
 {
   "name": "siwe-viem",
   "author": "Dries Steenberghe",
+  "version": "0.1.0",
   "license": "Apache-2.0",
   "main": "dist/siwe.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/steen3s/siwe-viem.git"
+  },
   "scripts": {
     "build": "tsc",
     "format": "prettier --ignore-path .gitignore --write \"**/*.+(js|ts|json)\""
